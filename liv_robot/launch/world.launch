@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<launch>
+  <arg name="paused" default="false"/>
+  <arg name="use_sim_time" default="true"/>
+  <arg name="gui" default="true"/>
+  <arg name="headless" default="false"/>
+  <arg name="debug" default="false"/>
+  <arg name="verbose" default="false"/>
+  <arg name="world_name" default="$(find liv_robot)/worlds/small_house.world"/>
+
+  <!-- Start gazebo and load the world -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="paused" value="$(arg paused)"/>
+    <arg name="use_sim_time" value="$(arg use_sim_time)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="headless" value="$(arg headless)"/>
+    <arg name="debug" value="$(arg debug)"/>
+    <arg name="verbose" value="$(arg verbose)"/>
+    <arg name="world_name" value="$(arg world_name)"/>
+  </include>
+
+  <!-- Spawn the example robot -->
+  <arg name="gpu" default="true"/>
+  <arg name="organize_cloud" default="false"/>
+  <param name="robot_description" command="$(find xacro)/xacro '$(find liv_robot)/urdf/liv_robot.urdf.xacro' organize_cloud:=$(arg organize_cloud) gpu:=$(arg gpu)" />
+
+  <node name="joint_state_publisher_gui" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+    <param name="publish_frequency" type="double" value="30.0" />
+  </node>
+
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_model" args="-urdf -param /robot_description -model liv_robot -x 0 -y 0 -z 0.2"/>
+
+  <node name="controller_spawner" pkg="controller_manager" type="spawner" args="$(find liv_robot)/config/liv_robot_joint_ctrlr_params.yaml"/>
+
+  <node name="ackermann_controller" pkg="liv_robot" type="ackermann_controller">
+    <rosparam file="$(find liv_robot)/config/liv_robot_ackermann_ctrlr_params.yaml" command="load"/>
+  </node>
+
+
+  <node name="cmd_vel_to_ackermann_drive" pkg="liv_robot" type="cmd_vel_to_ackermann_drive.py" output="screen">
+    <param name="twist_cmd_topic" value="/cmd_vel"/>
+    <param name="ackermann_cmd_topic" value="/ackermann_cmd"/>
+    <param name="wheelbase" value="0.3492"/>
+    <param name="frame_id" value="base_link"/>
+    <param name="message_type" value="ackermann_drive"/>
+  </node>
+  <!-- RViz -->
+  <arg name="rviz" default="true"/>
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find liv_robot)/rviz/liv_robot.rviz" />
+</launch>

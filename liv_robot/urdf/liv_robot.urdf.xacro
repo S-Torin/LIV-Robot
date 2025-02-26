@@ -1,0 +1,477 @@
+<?xml version="1.0"?>
+<robot name="liv_robot"
+  xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="gpu" default="false"/>
+  <xacro:property name="gpu" value="$(arg gpu)" />
+  <xacro:arg name="organize_cloud" default="false"/>
+  <xacro:property name="organize_cloud" value="$(arg organize_cloud)" />
+
+  <xacro:property name="degrees_45" value="0.785398163"/>
+  <xacro:property name="degrees_90" value="1.57079633"/>
+
+  <xacro:property name="wheelbase" value="0.3492"/>
+  <xacro:property name="hex_hub_dist" value="0.45"/>
+  <xacro:property name="axle_length" value="0.03"/>
+  <xacro:property name="wheel_travel" value="0.05"/>
+  <xacro:property name="shock_z_offset" value="0.03"/>
+
+  <xacro:property name="shock_eff_limit" value="12.5106"/>
+  <xacro:property name="shock_vel_limit" value="1000"/>
+  <xacro:property name="axle_eff_limit" value="5.12766"/>
+  <xacro:property name="axle_vel_limit" value="244.8696"/>
+  <xacro:property name="servo_stall_torque" value="0.5649"/>
+  <xacro:property name="servo_no_load_speed" value="4.553"/>
+
+  <xacro:property name="hub_dia" value="0.10"/>
+  <xacro:property name="tire_dia" value="0.125"/>
+  <xacro:property name="tire_width" value="0.04"/>
+  <xacro:property name="hex_hub_depth" value="0.0125"/>
+  <xacro:property name="wheel_mass" value="0.29"/>
+
+  <xacro:macro name="null_inertial">
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="thick_walled_tube_inertial" params="inner_rad outer_rad height mass">
+    <inertial>
+      <mass value="${mass}"/>
+      <inertia ixx="${(1 / 12) * mass * (3 * (inner_rad * inner_rad +
+                    outer_rad * outer_rad) + height * height)}" ixy="0" ixz="0" iyy="${(1 / 12) * mass * (3 * (inner_rad * inner_rad +
+                    outer_rad * outer_rad) + height * height)}" iyz="0" izz="${mass * (inner_rad * inner_rad +
+                    outer_rad * outer_rad) / 2}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="shock" params="lr_prefix fr_prefix lr_reflect fr_reflect child">
+    <joint name="${lr_prefix}_${fr_prefix}_shock" type="prismatic">
+      <parent link="chassis"/>
+      <child link="${child}"/>
+      <origin xyz="${fr_reflect * wheelbase / 2} ${lr_reflect * ((hex_hub_dist / 2) - axle_length)} ${wheel_travel / 2 - shock_z_offset}"/>
+      <axis xyz="0 0 -1"/>
+      <limit lower="${-wheel_travel / 2}" upper="${wheel_travel / 2}" effort="${shock_eff_limit}" velocity="${shock_vel_limit}"/>
+    </joint>
+    <transmission name="${lr_prefix}_${fr_prefix}_shock_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="${lr_prefix}_${fr_prefix}_shock">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="${lr_prefix}_${fr_prefix}_shock_act">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+    </transmission>
+  </xacro:macro>
+
+  <!-- 轮子宏定义 -->
+  <xacro:macro name="wheel" params="lr_prefix fr_prefix lr_reflect">
+    <link name="${lr_prefix}_${fr_prefix}_axle_carrier">
+      <xacro:null_inertial/>
+    </link>
+
+    <joint name="${lr_prefix}_${fr_prefix}_axle" type="continuous">
+      <parent link="${lr_prefix}_${fr_prefix}_axle_carrier"/>
+      <child link="${lr_prefix}_${fr_prefix}_wheel"/>
+      <origin rpy="${degrees_90} 0 0"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="${axle_eff_limit}" velocity="${axle_vel_limit}"/>
+    </joint>
+    <transmission name="${lr_prefix}_${fr_prefix}_axle_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="${lr_prefix}_${fr_prefix}_axle">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="${lr_prefix}_${fr_prefix}_axle_act">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+    </transmission>
+
+    <link name="${lr_prefix}_${fr_prefix}_wheel">
+      <visual>
+        <origin xyz="0 0 ${-lr_reflect * (axle_length - (tire_width / 2 - hex_hub_depth))}" rpy="${-degrees_90} 0 ${lr_reflect * degrees_90}"/>
+        <geometry>
+          <mesh filename="package://liv_robot/meshes/${lr_prefix}_${fr_prefix}_wheel_link.STL"/>
+        </geometry>
+        <material name="wheel_material">
+          <color rgba="0.1 0.1 0.1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-lr_reflect * (axle_length - (tire_width / 2 - hex_hub_depth))}" rpy="${-degrees_90} 0 ${lr_reflect * degrees_90}"/>
+        <geometry>
+          <mesh filename="package://liv_robot/meshes/${lr_prefix}_${fr_prefix}_wheel_link.STL"/>
+        </geometry>
+      </collision>
+      <xacro:thick_walled_tube_inertial inner_rad="${hub_dia / 2}" outer_rad="${tire_dia / 2}" height="${tire_width}" mass="${wheel_mass}"/>
+    </link>
+    <gazebo reference="${lr_prefix}_${fr_prefix}_wheel">
+      <material>Gazebo/Black</material>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- 前轮宏定义 -->
+  <xacro:macro name="front_wheel" params="lr_prefix fr_prefix lr_reflect fr_reflect">
+    <xacro:shock lr_prefix="${lr_prefix}" fr_prefix="${fr_prefix}" lr_reflect="${lr_reflect}" fr_reflect="${fr_reflect}" child="${lr_prefix}_steering_link"/>
+
+    <link name="${lr_prefix}_steering_link">
+      <xacro:null_inertial/>
+    </link>
+
+    <joint name="${lr_prefix}_steering_joint" type="revolute">
+      <parent link="${lr_prefix}_steering_link"/>
+      <child link="${lr_prefix}_${fr_prefix}_axle_carrier"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-degrees_45}" upper="${degrees_45}" effort="${servo_stall_torque}" velocity="${servo_no_load_speed}"/>
+    </joint>
+    <transmission name="${lr_prefix}_steering_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="${lr_prefix}_steering_joint">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="${lr_prefix}_steering_act">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+    </transmission>
+
+    <xacro:wheel lr_prefix="${lr_prefix}" fr_prefix="${fr_prefix}" lr_reflect="${lr_reflect}"/>
+  </xacro:macro>
+
+  <!-- 后轮宏定义 -->
+  <xacro:macro name="rear_wheel" params="lr_prefix fr_prefix lr_reflect fr_reflect">
+    <xacro:shock lr_prefix="${lr_prefix}" fr_prefix="${fr_prefix}" lr_reflect="${lr_reflect}" fr_reflect="${fr_reflect}" child="${lr_prefix}_${fr_prefix}_axle_carrier"/>
+    <xacro:wheel lr_prefix="${lr_prefix}" fr_prefix="${fr_prefix}" lr_reflect="${lr_reflect}"/>
+  </xacro:macro>
+
+  <!-- 底盘 -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://liv_robot/meshes/base_link.STL"/>
+      </geometry>
+      <material name="base_material">
+        <color rgba="0.2 0.2 0.2 1"/>
+      </material>
+    </visual>
+    <xacro:null_inertial/>
+  </link>
+
+  <link name="chassis">
+    <visual>
+      <geometry>
+        <box size="0.05 0.05 0.01"/>
+      </geometry>
+      <material name="chassis_material">
+        <color rgba="0.3 0.3 0.3 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.05 0.05 0.01"/>
+      </geometry>
+    </collision>
+    <xacro:null_inertial/>
+  </link>
+
+  <joint name="base_link_to_chassis" type="fixed">
+    <parent link="base_link"/>
+    <child link="chassis"/>
+  </joint>
+
+  <!-- 添加四个轮子 -->
+  <xacro:front_wheel lr_prefix="left" fr_prefix="front" lr_reflect="1" fr_reflect="1"/>
+  <xacro:front_wheel lr_prefix="right" fr_prefix="front" lr_reflect="-1" fr_reflect="1"/>
+  <xacro:rear_wheel lr_prefix="left" fr_prefix="rear" lr_reflect="1" fr_reflect="-1"/>
+  <xacro:rear_wheel lr_prefix="right" fr_prefix="rear" lr_reflect="-1" fr_reflect="-1"/>
+
+  <!-- Gazebo Plugins -->
+  <gazebo>
+    <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">
+      <robotParam>robot_description</robotParam>
+      <robotSimType>gazebo_ros_control/DefaultRobotHWSim</robotSimType>
+      <legacyModeNS>true</legacyModeNS>
+    </plugin>
+  </gazebo>
+
+  <link name="velodyne_link">
+    <inertial>
+      <mass value="0.01"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.0377" />
+      <geometry>
+        <mesh filename="package://liv_robot/meshes/LiDAR_scan.dae" />
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name ="velodyne_joints" type="fixed">
+    <origin xyz="0.0 0.0 0.15" rpy="0.0 0.0 0.0"/>
+    <parent link="base_link"/>
+    <child link="velodyne_link"/>
+  </joint>
+
+  <link name="velodyne_base_link">
+    <inertial>
+      <mass value="0.83"/>
+      <origin xyz="0 0 0.03585"/>
+      <inertia ixx="${(0.83 * (3.0*0.0516*0.0516 + 0.0717*0.0717)) / 12.0}" ixy="0" ixz="0" iyy="${(0.83 * (3.0*0.0516*0.0516 + 0.0717*0.0717)) / 12.0}" iyz="0" izz="${0.5 * 0.83 * (0.0516*0.0516)}"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://liv_robot/meshes/LiDAR_base_1.dae" />
+      </geometry>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://liv_robot/meshes/LiDAR_base_2.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.03585"/>
+      <geometry>
+        <cylinder radius="0.0516" length="0.0717"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="velodyne_base_joint" type="fixed">
+    <origin xyz="0 0 -0.0377" rpy="0 0 0" />
+    <parent link="velodyne_link" />
+    <child link="velodyne_base_link"/>
+  </joint>
+
+  <!--*********************************************************************-->
+
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="1.5708 0 1.5708" />
+      <geometry>
+        <mesh filename="package://liv_robot/meshes/d415.stl" />
+      </geometry>
+      <material name="">
+        <color rgba="0.0 0.0 0.0 1.0" />
+      </material>
+    </visual>
+  </link>
+  <joint name ="camera_joints" type="fixed">
+    <origin xyz="0.0 0.0 0.20" rpy="0.0 0.0 0.0"/>
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+  </joint>
+  <!--*********************************************************************-->
+
+  <!--  add imu llink   -->
+  <link name="imu_link">
+    <visual>
+      <geometry>
+        <box size="0.015 0.015 0.007"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name ="imu_joints" type="fixed">
+    <origin xyz="0.0 0.0 0.05" rpy="0.0 0.0 0.0"/>
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+  </joint>
+  <!--*********************************************************************-->
+
+
+  <!--add color for links -->
+  <gazebo reference="base_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <gazebo reference="front_left_wheel_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="front_right_wheel_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="left_rear_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="right_rear_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="velodyne_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="camera_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="imu_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <!-- Gazebo requires the velodyne_gazebo_plugins package -->
+  <gazebo reference="velodyne_link">
+    <xacro:property name="M_PI" value="3.1415926535897931" />
+    <xacro:property name="topic" value="/velodyne_points" />
+    <xacro:property name="name" value="velodyne" />
+    <xacro:property name="samples" value="1024" />
+    <xacro:property name="lasers" value="32" />
+    <xacro:property name="collision_range" value="0.3" />
+    <xacro:property name="min_range" value="0.5" />
+    <xacro:property name="max_range" value="200.0" />
+    <xacro:property name="noise" value="0.008" />
+    <xacro:property name="min_angle" value="-${M_PI}" />
+    <xacro:property name="max_angle" value="${M_PI}" />
+    <xacro:property name="hz" value="10" />
+    <xacro:if value="${gpu}">
+      <sensor type="gpu_ray" name="${name}-HDL32E">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>false</visualize>
+        <update_rate>${hz}</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>${samples}</samples>
+              <resolution>1</resolution>
+              <min_angle>${min_angle}</min_angle>
+              <max_angle>${max_angle}</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>${lasers}</samples>
+              <resolution>1</resolution>
+              <min_angle>-${30.67*M_PI/180.0}</min_angle>
+              <max_angle> ${10.67*M_PI/180.0}</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>${collision_range}</min>
+            <max>${max_range+1}</max>
+            <resolution>0.001</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.0</stddev>
+          </noise>
+        </ray>
+        <plugin name="gazebo_ros_laser_controller" filename="libgazebo_ros_velodyne_gpu_laser.so">
+          <topicName>${topic}</topicName>
+          <frameName>${name}_link</frameName>
+          <organize_cloud>${organize_cloud}</organize_cloud>
+          <min_range>${min_range}</min_range>
+          <max_range>${max_range}</max_range>
+          <gaussianNoise>${noise}</gaussianNoise>
+        </plugin>
+      </sensor>
+    </xacro:if>
+    <xacro:unless value="${gpu}">
+      <sensor type="ray" name="${name}-HDL32E">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>false</visualize>
+        <update_rate>${hz}</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>${samples}</samples>
+              <resolution>1</resolution>
+              <min_angle>${min_angle}</min_angle>
+              <max_angle>${max_angle}</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>${lasers}</samples>
+              <resolution>1</resolution>
+              <min_angle>-${30.67*M_PI/180.0}</min_angle>
+              <max_angle> ${10.67*M_PI/180.0}</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>${collision_range}</min>
+            <max>${max_range+1}</max>
+            <resolution>0.001</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.0</stddev>
+          </noise>
+        </ray>
+        <plugin name="gazebo_ros_laser_controller" filename="libgazebo_ros_velodyne_laser.so">
+          <topicName>${topic}</topicName>
+          <frameName>${name}_link</frameName>
+          <organize_cloud>${organize_cloud}</organize_cloud>
+          <min_range>${min_range}</min_range>
+          <max_range>${max_range}</max_range>
+          <gaussianNoise>${noise}</gaussianNoise>
+        </plugin>
+      </sensor>
+    </xacro:unless>
+  </gazebo>
+
+  <!-- add camera simulation plugines -->
+  <gazebo reference="camera_link">
+    <sensor type="camera" name="camera0">
+      <update_rate>10.0</update_rate>
+      <camera name="head">
+        <horizontal_fov>1.5708</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>320</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.02</near>
+          <far>300</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <plugin name="camera_controller" filename="libgazebo_ros_camera.so">
+        <alwaysOn>true</alwaysOn>
+        <updateRate>10.0</updateRate>
+        <cameraName>/camera0</cameraName>
+        <imageTopicName>image_raw</imageTopicName>
+        <cameraInfoTopicName>camera_info</cameraInfoTopicName>
+        <frameName>base_link</frameName>
+        <hackBaseline>0.07</hackBaseline>
+        <distortionK1>0.0</distortionK1>
+        <distortionK2>0.0</distortionK2>
+        <distortionK3>0.0</distortionK3>
+        <distortionT1>0.0</distortionT1>
+        <distortionT2>0.0</distortionT2>
+      </plugin>
+    </sensor>
+  </gazebo>
+  <!--*********************************************************************-->
+
+  <!-- add imu link simlations plugines  -->
+  <gazebo reference="imu_link">
+    <gravity>true</gravity>
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <visualize>true</visualize>
+      <topic>__default_topic__</topic>
+      <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
+        <topicName>imu</topicName>
+        <bodyName>imu_link</bodyName>
+        <updateRateHZ>100.0</updateRateHZ>
+        <gaussianNoise>0.0</gaussianNoise>
+        <xyzOffset>0 0 0</xyzOffset>
+        <rpyOffset>0 0 0</rpyOffset>
+        <frameName>imu_link</frameName>
+        <initialOrientationAsReference>false</initialOrientationAsReference>
+      </plugin>
+      <pose>0 0 0 0 0 0</pose>
+    </sensor>
+  </gazebo>
+
+</robot>
